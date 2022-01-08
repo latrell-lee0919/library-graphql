@@ -1,6 +1,23 @@
 const { ApolloServer, gql } = require('apollo-server')
 const core = require('apollo-server-core')
 const { v1: uuid } = require('uuid')
+const Book = require('./models/book')
+const Author = require('./models/author')
+require('dotenv').config()
+
+const MONGODB_URI = `mongodb+srv://latrell_admin:${process.env.MONGO_DB_PASSWORD}@cluster0.8d7xk.mongodb.net/fsographql?retryWrites=true&w=majority`
+const JWT_SECRET = process.env.JWT_SECRET
+
+console.log('connecting to', MONGODB_URI)
+
+mongoose.connect(MONGODB_URI)
+  .then(() => {
+    console.log('connected to MongoDB')
+  })
+  .catch((error) => {
+    console.log('error connection to MongoDB:', error.message)
+  })
+
 
 let authors = [
   {
@@ -92,11 +109,11 @@ let books = [
 
 const typeDefs = gql`
   type Book {
-      title: String!
-      published: Int!
-      author: String!
-      id: ID!
-      genres: [String!]!
+    title: String!
+    published: Int!
+    author: Author!
+    genres: [String!]!
+    id: ID!
   }
 
   type Author {
@@ -132,28 +149,34 @@ const typeDefs = gql`
 
 const resolvers = {
   Query: {
-      bookCount: () => books.length,
-      authorCount: () => authors.length,
-      allBooks: (root, args) => {
-        if(!args.author && !args.genre) {
-            return books
+      bookCount: () => Book.collection.countDocuments(),
+      authorCount: () => Author.collection.countDocuments(),
+      allBooks: async (root, args) => {
+        // if(!args.author && !args.genre) {
+        //     await Book.find({})
+        // }
+
+        // if (!args.genre) {
+        //     return books.filter(book => book.author === args.author)
+        // }
+
+        // if (!args.author) {
+        //     return books.filter(book => book.genres.includes(args.genre))
+        // }
+
+        // return books.filter(book => 
+        //     book.author === args.author && 
+        //     book.genres.includes(args.genre))
+
+        if(!args.genre) {
+            await Book.find({})
         }
 
-        if (!args.genre) {
-            return books.filter(book => book.author === args.author)
-        }
-
-        if (!args.author) {
-            return books.filter(book => book.genres.includes(args.genre))
-        }
-
-        return books.filter(book => 
-            book.author === args.author && 
-            book.genres.includes(args.genre))
-        
+        return Book.find({ genres: { $in: args.genre }})
           
       },
-      allAuthors: () => authors
+      allAuthors: async (root, args) => {
+        await Author.find({})
   },
   Author: {
     bookCount: (root) => {
@@ -164,32 +187,46 @@ const resolvers = {
     }
   },
   Mutation: {
-    addBook: (root, args) => {
-        const book = { ...args, id: uuid() }
-        books = books.concat(book)
-        const authorObject = { name: args.author, id: uuid() }
-        authors = authors.concat(authorObject)
+    addBook: async (root, args) => {
+        const book = new Book({ ...args })
+        
+        const authorObject = new Author({ name: args.author })
+        
+        try {
+          await book.save()
+          await authorObject.save()
+        } catch (error) {
+          throw new UserInputError(error.message, {
+            invalidArgs: args,
+          })
+        }
         return book
     },
     editAuthor: (root, args) => {
-        const author = authors.find(a => a.name === args.name)
+        const author = await Author.findOne({ name: args.name })
+        author.born = args.born
         if (!author) {
             return null
         }
 
-        const updatedAuthor = { ...author, born: args.setBornTo }
-        authors = authors.map(a => a.name === args.name ? updatedAuthor : a)
-        return updatedAuthor
+        try {
+          await author.save()
+        } catch (error) {
+          throw new UserInputError(error.message, {
+            invalidArgs: args,
+          })
+        }
     }
   }
+}
 }
 
 const server = new ApolloServer({
   typeDefs,
   resolvers,
   plugins: [
-    core.ApolloServerPluginLandingPageGraphQLPlayground(),
-  ],
+      core.ApolloServerPluginLandingPageGraphQLPlayground(),
+    ],
 })
 
 server.listen().then(({ url }) => {
