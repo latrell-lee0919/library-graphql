@@ -1,5 +1,6 @@
-const { ApolloServer, gql } = require('apollo-server')
+const { ApolloServer, UserInputError, gql } = require('apollo-server')
 const core = require('apollo-server-core')
+const mongoose = require("mongoose")
 const { v1: uuid } = require('uuid')
 const Book = require('./models/book')
 const Author = require('./models/author')
@@ -168,33 +169,32 @@ const resolvers = {
         //     book.author === args.author && 
         //     book.genres.includes(args.genre))
 
-        if(!args.genre) {
-            await Book.find({})
+        if (args.genre) {
+          return Book.find({ genres: { $in: [args.genre] } }).populate('author')
         }
-
-        return Book.find({ genres: { $in: args.genre }})
+  
+        return Book.find({}).populate('author')
           
       },
-      allAuthors: async (root, args) => {
-        await Author.find({})
+      allAuthors: async () => await Author.find({})
   },
   Author: {
-    bookCount: (root) => {
-        const authorBooks = books.reduce((b, book) => {
-            return b + (book.author == root.name);
-        }, 0)
-        return authorBooks
+    bookCount: async (root) => {
+      const foundAuthor = await Author.findOne({ name: root.name })
+      const foundBooks = await Book.find({ author: foundAuthor.id }) 
+      return foundBooks.length
     }
   },
   Mutation: {
     addBook: async (root, args) => {
-        const book = new Book({ ...args })
-        
-        const authorObject = new Author({ name: args.author })
+      const author = new Author({ name: args.author, born: null })
+      const book = new Book({ ...args, author: author })
         
         try {
+          await author.save()
           await book.save()
-          await authorObject.save()
+          console.log("saving author ", author)
+          console.log("saving book ", book)
         } catch (error) {
           throw new UserInputError(error.message, {
             invalidArgs: args,
@@ -202,23 +202,18 @@ const resolvers = {
         }
         return book
     },
-    editAuthor: (root, args) => {
+    editAuthor: async (root, args) => {
         const author = await Author.findOne({ name: args.name })
-        author.born = args.born
+        
         if (!author) {
             return null
         }
 
-        try {
-          await author.save()
-        } catch (error) {
-          throw new UserInputError(error.message, {
-            invalidArgs: args,
-          })
-        }
+        author.overwrite({ name: args.name, born: args.setBornTo })
+        await author.save()
+        return author
     }
   }
-}
 }
 
 const server = new ApolloServer({
