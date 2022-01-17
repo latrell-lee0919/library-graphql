@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken')
 const { v1: uuid } = require('uuid')
 const Book = require('./models/book')
 const Author = require('./models/author')
+const User = require('./models/user')
 require('dotenv').config()
 
 const MONGODB_URI = `mongodb+srv://latrell_admin:${process.env.MONGO_DB_PASSWORD}@cluster0.8d7xk.mongodb.net/fsographql?retryWrites=true&w=majority`
@@ -240,9 +241,12 @@ const resolvers = {
         username: args.username, 
         favoriteGenre: args.favoriteGenre 
       })
+
+      
   
       return user.save()
         .catch(error => {
+          console.log(user)
           throw new UserInputError(error.message, {
             invalidArgs: args,
           })
